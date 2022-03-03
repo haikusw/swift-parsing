@@ -1,10 +1,10 @@
 # Design
 
-Learn how the library is designed, including its use of protocols, result builders and operators.
+Learn how the Parsing library is designed, including its use of protocols, result builders and operators.
 
 ## Protocol
 
-The design of the library is largely inspired by the Swift standard library and Apple's Combine
+The design of this Parsing library is largely inspired by the Swift standard library and Apple's Combine
 framework. A parser is represented as a protocol that many types conform to, and then parser
 transformations (also known as "combinators") are methods that return concrete types conforming to
 the parser protocol.
@@ -127,5 +127,5 @@ extension Parsers {
 ```
 
 Types that conform to the ``Parser`` protocol but are not constructed directly, and instead are
-constructed via operators, are housed in the ``Parsers`` type. It's just an empty enum that
+constructed via operators, are housed in the ``Parsers`` type. This is just an empty enum that
 serves as a namespace for such parsers.

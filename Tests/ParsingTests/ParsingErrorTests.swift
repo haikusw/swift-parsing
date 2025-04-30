@@ -15,7 +15,8 @@ class ParsingErrorTests: XCTestCase {
       try Parse {
         MyParser()
         MyParser()
-      }.parse(MyInput())
+      }
+      .parse(MyInput())
     ) { error in
       XCTAssertEqual(
         """
@@ -27,7 +28,7 @@ class ParsingErrorTests: XCTestCase {
   }
 
   func testAlignsLineNumber() {
-    let parser = Many(atLeast: 101) {
+    let parser = Many(101...) {
       "Hello"
     } separator: {
       "\n"
@@ -50,7 +51,7 @@ class ParsingErrorTests: XCTestCase {
 
   func testTruncatesLongLines() {
     XCTAssertThrowsError(
-      try Many(atLeast: 101) { "hello" }.parse(
+      try Many(101...) { "hello" }.parse(
         String(repeating: "hello", count: 100) + String(repeating: "world", count: 100)
       )
     ) { error in
@@ -66,7 +67,7 @@ class ParsingErrorTests: XCTestCase {
     }
 
     XCTAssertThrowsError(
-      try Many(atLeast: 101) { "hello" }.parse(
+      try Many(101...) { "hello" }.parse(
         String(repeating: "hello", count: 100) + "world"
       )
     ) { error in
@@ -99,13 +100,14 @@ class ParsingErrorTests: XCTestCase {
   }
 
   func testComplexStringLiteralParserError() {
-    let stringLiteral = Parse {
+    let asciiByte = Prefix<Substring>(1...) { $0 != "\"" && $0 >= " " }.map(String.init)
+    let stringLiteral = Parse(input: Substring.self) {
       "\""
       Many(into: "") {
         $0.append(contentsOf: $1)
       } element: {
         OneOf {
-          Prefix(1...) { $0 != "\"" && $0 >= " " }.map(String.init)
+          asciiByte
           Parse {
             "\\"
             OneOf {

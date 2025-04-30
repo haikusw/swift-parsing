@@ -53,16 +53,30 @@ enum ParsingError: Error {
   }
 
   @usableFromInline
-  static func wrap(_ error: Error, at remainingInput: Any) -> Self {
+  static func wrap(_ error: Error, from originalInput: Any, to remainingInput: Any) -> Self {
     error as? ParsingError
       ?? .failed(
         "",
         .init(
+          originalInput: originalInput,
           remainingInput: remainingInput,
           debugDescription: formatError(error),
           underlyingError: error
         )
       )
+  }
+
+  @usableFromInline
+  static func wrap(_ error: Error, at remainingInput: Any) -> Self {
+    .wrap(error, from: remainingInput, to: remainingInput)
+  }
+
+  @usableFromInline
+  var context: Context {
+    switch self {
+    case let .failed(_, context), let .manyFailed(_, context):
+      return context
+    }
   }
 
   @usableFromInline
@@ -95,14 +109,6 @@ enum ParsingError: Error {
           .map { $0.error },
         context
       )
-    }
-  }
-
-  @usableFromInline
-  var context: Context {
-    switch self {
-    case let .failed(_, context), let .manyFailed(_, context):
-      return context
     }
   }
 
@@ -218,10 +224,12 @@ extension ParsingError.Context {
       switch (normalize(lhs), normalize(rhs)) {
       case let (lhs as Substring, rhs as Substring):
         return lhs.startIndex == rhs.startIndex && lhs.endIndex == rhs.endIndex
+
       case let (lhs as Slice<[Substring]>, rhs as Slice<[Substring]>):
         return zip(lhs, rhs).allSatisfy { l, r in
           l.startIndex == r.startIndex && l.endIndex == r.endIndex
         }
+
       default:
         return false
       }
@@ -283,8 +291,13 @@ func format(labels: [String], context: ParsingError.Context) -> String {
       ]
       .prefix { !$0.isNewline }
       let isStartTruncated = offset != position.column
-      let truncatedLine = selectedLine.prefix(79 - 4 - (isStartTruncated ? 1 : 0))
+      var truncatedLine = selectedLine.prefix(79 - 4 - (isStartTruncated ? 1 : 0))
       let isEndTruncated = truncatedLine.endIndex != selectedLine.endIndex
+      for index in truncatedLine.indices.reversed() {
+        guard truncatedLine[index].isWhitespace
+        else { break }
+        truncatedLine.replaceSubrange(index...index, with: "␣")
+      }
 
       let diagnostic =
         ("\(isStartTruncated ? "…" : "")\(truncatedLine)\(isEndTruncated ? "…" : "")\n"
@@ -447,6 +460,17 @@ extension ParsingError.Context {
       }
       return lhsInput.endIndex > rhsInput.endIndex
 
+    case let (lhsInput as Slice<[Substring]>, rhsInput as Substring):
+      return lhsInput.first.map {
+        $0.base != rhsInput.base
+          ? false
+          : $0.startIndex > rhsInput.startIndex
+      }
+        ?? false
+
+    case (is Substring, is Slice<[Substring]>):
+      return !(rhs > lhs)
+
     default:
       return false
     }
@@ -474,6 +498,11 @@ private func normalize(_ input: Any) -> Any {
 
   case let input as Slice<[Substring]>:
     return input.endIndex == input.base.endIndex ? input[..<input.startIndex] : input
+
+  case let input as ArraySlice<Substring>:
+    let base = unsafeBitCast(input._owner!, to: Array<Substring>.self)
+    let slice = Slice(base: base, bounds: input.startIndex..<input.endIndex)
+    return normalize(slice)
 
   default:
     return input

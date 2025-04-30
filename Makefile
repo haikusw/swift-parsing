@@ -1,6 +1,6 @@
 PLATFORM_IOS = iOS Simulator,name=iPhone 11 Pro
 PLATFORM_MACOS = macOS
-PLATFORM_TVOS = tvOS Simulator,name=Apple TV 4K (at 1080p)
+PLATFORM_TVOS = tvOS Simulator,name=Apple TV
 
 default: test
 
@@ -9,12 +9,15 @@ benchmarks:
 
 test:
 	xcodebuild test \
+		-workspace Parsing.xcworkspace \
 		-scheme Parsing \
 		-destination platform="$(PLATFORM_IOS)"
 	xcodebuild test \
+		-workspace Parsing.xcworkspace \
 		-scheme Parsing \
 		-destination platform="$(PLATFORM_MACOS)"
 	xcodebuild test \
+		-workspace Parsing.xcworkspace \
 		-scheme Parsing \
 		-destination platform="$(PLATFORM_TVOS)"
 
@@ -37,6 +40,9 @@ format:
 	find . -type f -name '*.md' -print0 | xargs -0 perl -pi -e 's/ +$$//'
 
 generate-variadics:
-	swift run variadics-generator > Sources/Parsing/Builders/Variadics.swift
+	swift run variadics-generator \
+		--generate-zips \
+		--generate-one-ofs \
+		> Sources/Parsing/Builders/Variadics.swift
 
 .PHONY: benchmarks format generate-variadics test

@@ -1,10 +1,11 @@
 # swift-parsing
 
 ![CI](https://github.com/pointfreeco/swift-parsing/workflows/CI/badge.svg)
+[![Slack](https://img.shields.io/badge/slack-chat-informational.svg?label=Slack&logo=slack)](http://pointfree.co/slack-invite)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fpointfreeco%2Fswift-parsing%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/pointfreeco/swift-parsing)
 [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fpointfreeco%2Fswift-parsing%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/pointfreeco/swift-parsing)
 
-A library for turning nebulous data into well-structured data, with a focus on composition, performance, generality, and ergonomics:
+A library for turning unstructured data into structured data, with a focus on composition, performance, generality, and invertibility:
 
 * **Composition**: Ability to break large, complex parsing problems down into smaller, simpler ones. And the ability to take small, simple parsers and easily combine them into larger, more complex ones.
 
@@ -12,7 +13,7 @@ A library for turning nebulous data into well-structured data, with a focus on c
 
 * **Generality**: Ability to parse _any_ kind of input into _any_ kind of output. This allows you to choose which abstraction levels you want to work on based on how much performance you need or how much correctness you want guaranteed. For example, you can write a highly tuned parser on collections of UTF-8 code units, and it will automatically plug into parsers of strings, arrays, unsafe buffer pointers and more.
 
-* **Ergonomics**: Accomplish all of the above in a simple, fluent API that can succinctly describe your parsing problem.
+* **Invertibility**: Ability to invert your parsers so that they are printers. This allows you to transform your well-structured data back into unstructured data, which is useful for serialization, sending data over the network, [URL routing][swift-url-routing], and more.
 
 ---
 
@@ -20,6 +21,7 @@ A library for turning nebulous data into well-structured data, with a focus on c
 * [Getting started](#getting-started)
 * [Benchmarks](#benchmarks)
 * [Documentation](#documentation)
+* [Community](#community)
 * [Other libraries](#other-libraries)
 * [License](#license)
 
@@ -33,7 +35,7 @@ This library was designed over the course of many [episodes](https://www.pointfr
 
 ## Motivation
 
-Parsing is a surprisingly ubiquitous problem in programming. We can define parsing as trying to take a more nebulous blob of data and transform it into something more well-structured. The Swift standard library comes with a number of parsers that we reach for every day. For example, there are initializers on `Int`, `Double`, and even `Bool`, that attempt to parse numbers and booleans from strings:
+Parsing is a surprisingly ubiquitous problem in programming. We can define parsing as trying to transform unstructured data into structured data. The Swift standard library comes with a number of parsers that we reach for every day. For example, there are initializers on `Int`, `Double`, and even `Bool`, that attempt to parse numbers and booleans from strings:
 
 ```swift
 Int("42")          // 42
@@ -101,28 +103,26 @@ It would be more straightforward and efficient to instead describe how to consum
 We can start by describing what it means to parse a single row, first by parsing an integer off the front of the string, and then parsing a comma. We can do this by using the `Parse` type, which acts as an entry point into describing a list of parsers that you want to run one after the other to consume from an input:
 
 ```swift
-let user = Parse {
+let user = Parse(input: Substring.self) {
   Int.parser()
   ","
 }
 ```
 
+Note that this parsing library is quite general, allowing one to parse _any_ kind of input into
+_any_ kind of output. For this reason we sometimes need to specify the exact input type the parser
+can process, in this case substrings.
+
 Already this can consume the beginning of the input:
 
 ```swift
-// Use a mutable substring to verify what is consumed
-var input = input[...]
-
-try user.parse(&input)  // 1
-input                   // "Blob,true\n2,Blob Jr.,false\n3,Blob Sr.,true"
+try user.parse("1,")  // 1
 ```
-
-> Note that we use a `Substring` instead of `String` because it allows for more efficient mutations and copying. See the article ["String Abstractions"][string-abstractions-docs] for more information.
 
 Next we want to take everything up until the next comma for the user's name, and then consume the comma:
 
 ```swift
-let user = Parse {
+let user = Parse(input: Substring.self) {
   Int.parser()
   ","
   Prefix { $0 != "," }
@@ -133,7 +133,7 @@ let user = Parse {
 And then we want to take the boolean at the end of the row for the user's admin status:
 
 ```swift
-let user = Parse {
+let user = Parse(input: Substring.self) {
   Int.parser()
   ","
   Prefix { $0 != "," }
@@ -145,7 +145,7 @@ let user = Parse {
 Currently this will parse a tuple `(Int, Substring, Bool)` from the input, and we can `.map` on that to turn it into a `User`:
 
 ```swift
-let user = Parse {
+let user = Parse(input: Substring.self) {
   Int.parser()
   ","
   Prefix { $0 != "," }
@@ -158,7 +158,7 @@ let user = Parse {
 To make the data we are parsing to more prominent, we can instead pass the transform closure as the first argument to `Parse`:
 
 ```swift
-let user = Parse {
+let user = Parse(input: Substring.self) {
   User(id: $0, name: String($1), isAdmin: $2)
 } with: {
   Int.parser()
@@ -172,7 +172,7 @@ let user = Parse {
 Or we can pass the `User` initializer to `Parse` in a point-free style by transforming the `Prefix` parser's output from a `Substring` to ` String` first:
 
 ```swift
-let user = Parse(User.init(id:name:isAdmin:)) {
+let user = Parse(input: Substring.self, User.init(id:name:isAdmin:)) {
   Int.parser()
   ","
   Prefix { $0 != "," }.map(String.init)
@@ -181,11 +181,11 @@ let user = Parse(User.init(id:name:isAdmin:)) {
 }
 ```
 
-That is enough to parse a single user from the input string, leaving behind a newline and the final two users:
+That is enough to parse a single user from the input string:
 
 ```swift
-try user.parse(&input)  // User(id: 1, name: "Blob", isAdmin: true)
-input                   // "\n2,Blob Jr.,false\n3,Blob Sr.,true"
+try user.parse("1,Blob,true")
+// User(id: 1, name: "Blob", isAdmin: true)
 ```
 
 To parse multiple users from the input we can use the `Many` parser to run the user parser many times:
@@ -197,8 +197,8 @@ let users = Many {
   "\n"
 }
 
-try users.parse(&input)  // [User(id: 1, name: "Blob", isAdmin: true), ...]
-input                    // ""
+try users.parse(input)
+// [User(id: 1, name: "Blob", isAdmin: true), ...]
 ```
 
 Now this parser can process an entire document of users, and the code is simpler and more straightforward than the version that uses `.split` and `.compactMap`.
@@ -252,7 +252,39 @@ README Example.Ad hoc             8029.000 ns ±  44.44 %     163719
 README Example.Scanner           19786.000 ns ±  35.26 %      62125
 ```
 
-That's the basics of parsing a simple string format, but there's a lot more operators and tricks to learn in order to performantly parse larger inputs. Read the [documentation][swift-parsing-docs] to dive more deeply into the concepts of parsing, and view the [benchmarks](Sources/swift-parsing-benchmark) for more examples of real life parsing scenarios.
+We can take things even further. With one small change we can turn the parser into a _printer_.
+
+```diff
+-let user = Parse(User.init(id:name:isAdmin:)) {
++let user = ParsePrint(.memberwise(User.init(id:name:isAdmin:))) {
+   Int.parser()
+   ","
+   Prefix { $0 != "," }.map(String.init)
+   ","
+   Bool.parser()
+ }
+
+ let users = Many {
+   user
+ } separator: {
+   "\n"
+ }
+```
+
+With this one change we can now print an array of users back into a string:
+
+```swift
+users.print([
+  User(id: 1, name: "Blob", isAdmin: true),
+  User(id: 2, name: "Blob Jr.", isAdmin: false),
+  User(id: 3, name: "Blob Sr.", isAdmin: true),
+])
+// 1,Blob,true
+// 2,Blob Jr.,false
+// 3,Blob Sr.,true
+```
+
+That's the basics of parsing and printing a simple string format, but there's a lot more operators and tricks to learn in order to performantly parse larger inputs. Read the [documentation][swift-parsing-docs] to dive more deeply into the concepts of parser-printers, and view the [benchmarks](Sources/swift-parsing-benchmark) for more examples of real life parsing scenarios.
 
 ## Benchmarks
 
@@ -265,7 +297,6 @@ This library comes with a benchmark executable that not only demonstrates the pe
 * [HTTP request](Sources/swift-parsing-benchmark/HTTP.swift)
 * [DNS header](Sources/swift-parsing-benchmark/BinaryData.swift)
 * [Arithmetic grammar](Sources/swift-parsing-benchmark/Arithmetic.swift)
-* [URL router](Sources/swift-parsing-benchmark/Routing.swift)
 * [Xcode test logs](Sources/swift-parsing-benchmark/XCTestLogs.swift)
 * and more
 
@@ -278,47 +309,47 @@ Apple M1 Pro (10 cores, 8 performance and 2 efficiency)
 
 name                                         time            std        iterations
 ----------------------------------------------------------------------------------
-Arithmetic.Parser                                8042.000 ns ±   5.91 %     174657
-BinaryData.Parser                                  42.000 ns ±  56.81 %    1000000
-Bool.Bool.init                                     41.000 ns ±  60.69 %    1000000
-Bool.Bool.parser                                   42.000 ns ±  57.28 %    1000000
-Bool.Scanner.scanBool                            1041.000 ns ±  25.98 %    1000000
-Color.Parser                                      209.000 ns ±  13.68 %    1000000
-CSV.Parser                                    4047750.000 ns ±   1.18 %        349
-CSV.Ad hoc mutating methods                    898604.000 ns ±   1.49 %       1596
-Date.Parser                                      6416.000 ns ±   2.56 %     219218
-Date.DateFormatter                              25625.000 ns ±   2.19 %      54110
-Date.ISO8601DateFormatter                       35125.000 ns ±   1.71 %      39758
-HTTP.HTTP                                        9709.000 ns ±   3.81 %     138868
-JSON.Parser                                     32292.000 ns ±   3.18 %      41890
-JSON.JSONSerialization                           1833.000 ns ±   8.58 %     764057
-Numerics.Int.init                                  41.000 ns ±  84.54 %    1000000
-Numerics.Int.parser                                42.000 ns ±  72.17 %    1000000
-Numerics.Scanner.scanInt                          125.000 ns ±  20.26 %    1000000
-Numerics.Comma separated: Int.parser          8096459.000 ns ±   0.44 %        173
-Numerics.Comma separated: Scanner.scanInt    49178770.500 ns ±   0.24 %         28
-Numerics.Comma separated: String.split       14922583.500 ns ±   0.67 %         94
-Numerics.Double.init                               42.000 ns ±  72.61 %    1000000
-Numerics.Double.parser                            125.000 ns ±  58.57 %    1000000
-Numerics.Scanner.scanDouble                       167.000 ns ±  18.84 %    1000000
-Numerics.Comma separated: Double.parser      11313395.500 ns ±   0.96 %        124
-Numerics.Comma separated: Scanner.scanDouble 50431521.000 ns ±   0.19 %         28
-Numerics.Comma separated: String.split       18744125.000 ns ±   0.46 %         75
-PrefixUpTo.Parser: Substring                   249958.000 ns ±   0.88 %       5595
-PrefixUpTo.Parser: UTF8                         13250.000 ns ±   2.96 %     105812
-PrefixUpTo.String.range(of:)                    43084.000 ns ±   1.57 %      32439
-PrefixUpTo.Scanner.scanUpToString               47500.000 ns ±   1.27 %      29444
-Race.Parser                                     34417.000 ns ±   2.73 %      40502
-README Example.Parser: Substring                 4000.000 ns ±   3.79 %     347868
-README Example.Parser: UTF8                      1125.000 ns ±   7.92 %    1000000
-README Example.Ad hoc                            3542.000 ns ±   4.13 %     394248
-README Example.Scanner                          14292.000 ns ±   2.82 %      97922
-Routing.Parser                                  21750.000 ns ±   3.23 %      64256
-String Abstractions.Substring                  934167.000 ns ±   0.60 %       1505
-String Abstractions.UTF8                       158750.000 ns ±   1.36 %       8816
-UUID.UUID.init                                    209.000 ns ±  15.02 %    1000000
-UUID.UUID.parser                                  208.000 ns ±  24.17 %    1000000
-Xcode Logs.Parser                             3768437.500 ns ±   0.56 %        372
+Arithmetic.Parser                                6166.000 ns ±  10.73 %     228888
+BinaryData.Parser                                 208.000 ns ±  39.64 %    1000000
+Bool.Bool.init                                     41.000 ns ±  84.71 %    1000000
+Bool.Bool.parser                                   42.000 ns ±  87.86 %    1000000
+Bool.Scanner.scanBool                             916.000 ns ±  30.55 %    1000000
+Color.Parser                                      208.000 ns ±  28.34 %    1000000
+CSV.Parser                                    3675250.000 ns ±   1.16 %        380
+CSV.Ad hoc mutating methods                    651333.000 ns ±   1.00 %       2143
+Date.Parser                                      3500.000 ns ±   5.65 %     238924
+Date.DateFormatter                              23542.000 ns ±   5.50 %      58766
+Date.ISO8601DateFormatter                       29041.000 ns ±   3.31 %      48028
+HTTP.HTTP                                       10250.000 ns ±   6.24 %     135657
+JSON.Parser                                     38167.000 ns ±   3.26 %      36423
+JSON.JSONSerialization                           1792.000 ns ±  54.14 %     753770
+Numerics.Int.init                                   0.000 ns ±    inf %    1000000
+Numerics.Int.parser                                83.000 ns ±  67.28 %    1000000
+Numerics.Scanner.scanInt                          125.000 ns ±  38.65 %    1000000
+Numerics.Digits                                    83.000 ns ±  65.03 %    1000000
+Numerics.Comma separated: Int.parser         15364583.000 ns ±   0.63 %         91
+Numerics.Comma separated: Scanner.scanInt    50654458.500 ns ±   0.30 %         28
+Numerics.Comma separated: String.split       15452542.000 ns ±   1.30 %         90
+Numerics.Double.init                               42.000 ns ± 152.57 %    1000000
+Numerics.Double.parser                            166.000 ns ±  45.23 %    1000000
+Numerics.Scanner.scanDouble                       167.000 ns ±  42.36 %    1000000
+Numerics.Comma separated: Double.parser      18539833.000 ns ±   0.57 %         75
+Numerics.Comma separated: Scanner.scanDouble 55239167.000 ns ±   0.46 %         25
+Numerics.Comma separated: String.split       17636000.000 ns ±   1.34 %         78
+PrefixUpTo.Parser: Substring                   182041.000 ns ±   1.78 %       7643
+PrefixUpTo.Parser: UTF8                         40417.000 ns ±   2.71 %      34379
+PrefixUpTo.String.range(of:)                    49792.000 ns ±   2.70 %      27891
+PrefixUpTo.Scanner.scanUpToString               53959.000 ns ±   3.87 %      25745
+Race.Parser                                     59583.000 ns ±   2.78 %      23333
+README Example.Parser: Substring                 2834.000 ns ±  12.87 %     488264
+README Example.Parser: UTF8                      1291.000 ns ±  22.65 %    1000000
+README Example.Ad hoc                            2459.000 ns ±  20.61 %     561930
+README Example.Scanner                          12084.000 ns ±   5.53 %     115388
+String Abstractions.Substring                  472083.500 ns ±   1.38 %       2962
+String Abstractions.UTF8                       196041.000 ns ±   3.38 %       7059
+UUID.UUID.init                                    208.000 ns ±  43.60 %    1000000
+UUID.UUID.parser                                  167.000 ns ±  42.00 %    1000000
+Xcode Logs.Parser                             4511625.500 ns ±   0.58 %        226
 ```
 
 ## Documentation
@@ -326,17 +357,29 @@ Xcode Logs.Parser                             3768437.500 ns ±   0.56 %        
 The documentation for releases and main are available here:
 
 * [main][swift-parsing-docs]
-* [0.7.1](https://pointfreeco.github.io/swift-parsing/0.7.1/documentation/parsing)
+* [0.10.0](https://pointfreeco.github.io/swift-parsing/0.10.0/documentation/parsing)
 <details>
   <summary>
   Other versions
   </summary>
 
+ * [0.9.0](https://pointfreeco.github.io/swift-parsing/0.9.0/documentation/parsing)
+  * [0.8.0](https://pointfreeco.github.io/swift-parsing/0.8.0/documentation/parsing)
+  * [0.7.1](https://pointfreeco.github.io/swift-parsing/0.7.1/documentation/parsing)
   * [0.7](https://pointfreeco.github.io/swift-parsing/0.7.0/documentation/parsing)
   * [0.6](https://pointfreeco.github.io/swift-parsing/0.6.0/documentation/parsing)
   * [0.5](https://pointfreeco.github.io/swift-parsing/0.5.0/documentation/parsing)
 
 </details>
+
+## Community
+
+If you want to discuss this library or have a question about how to use it to solve
+a particular problem, there are a number of places you can discuss with fellow
+[Point-Free](http://www.pointfree.co) enthusiasts:
+
+* For long-form discussions, we recommend the [discussions](http://github.com/pointfreeco/swift-parsing/discussions) tab of this repo.
+* For casual chat, we recommend the [Point-Free Community Slack](http://pointfree.co/slack-invite).
 
 ## Other libraries
 
@@ -346,6 +389,8 @@ There are a few other parsing libraries in the Swift community that you might al
 * [Sparse](https://github.com/johnpatrickmorgan/Sparse)
 * [SwiftParsec](https://github.com/davedufresne/SwiftParsec)
 
+The printing functionality in this library is inspired by the paper ["Invertible syntax descriptions: Unifying parsing and pretty printing"](https://www.informatik.uni-marburg.de/~rendel/unparse/rendel10invertible.pdf), by Tillmann Rendel and Klaus Ostermann.
+
 ## License
 
 This library is released under the MIT license. See [LICENSE](LICENSE) for details.
@@ -353,3 +398,4 @@ This library is released under the MIT license. See [LICENSE](LICENSE) for detai
 [getting-started-docs]: https://pointfreeco.github.io/swift-parsing/main/documentation/parsing/gettingstarted
 [string-abstractions-docs]: https://pointfreeco.github.io/swift-parsing/main/documentation/parsing/stringabstractions
 [swift-parsing-docs]: https://pointfreeco.github.io/swift-parsing
+[swift-url-routing]: https://github.com/pointfreeco/swift-url-routing

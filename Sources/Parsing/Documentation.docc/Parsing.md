@@ -5,7 +5,7 @@ performance, generality, and ergonomics.
 
 ## Additional Resources
 
-- [GitHub Repo](https://github.com/pointfreeco/swift-parsing/)
+- [GitHub Repo](https://github.com/pointfreeco/swift-parsing)
 - [Discussions](https://github.com/pointfreeco/swift-parsing/discussions)
 - [Point-Free Videos](https://www.pointfree.co/collections/parsing)
 
@@ -33,7 +33,7 @@ A parser can be constructed for transforming the input string into an array of u
 and fluent API:
 
 ```swift
-let user = Parse(User.init) {
+let user = Parse(input: Substring.self, User.init) {
   Int.parser()
   ","
   Prefix { $0 != "," }.map(String.init)
@@ -52,7 +52,7 @@ let users = Many {
 try users.parse(input)  // [User(id: 1, name: "Blob", isAdmin: true), ...]
 ```
 
-This says that to parse a user we:
+This says that to parse a user from a `Substring` we:
 
 * Parse and consume an integer from the beginning of the input
 * then a comma
@@ -85,6 +85,8 @@ try users.parse(input)
 //   |           ^ expected "true" or "false"
 ```
 
+With a few small changes we can also turn this parser into a ``ParserPrinter``
+
 That's the basics of parsing a simple string format, but there are a lot more operators and tricks
 to learn in order to performantly parse larger inputs.
 
@@ -97,3 +99,11 @@ to learn in order to performantly parse larger inputs.
 * <doc:StringAbstractions>
 * <doc:ErrorMessages>
 * <doc:Backtracking>
+* <doc:Roundtripping>
+
+## See Also
+
+The collection of videos from [Point-Free](https://www.pointfree.co) that dive deep into the
+development of the Parsing library.
+
+* [Point-Free Videos](https://www.pointfree.co/collections/parsing)

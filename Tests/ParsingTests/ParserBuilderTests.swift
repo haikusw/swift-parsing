@@ -4,7 +4,7 @@ import XCTest
 final class ParserBuilderTests: XCTestCase {
   func testBuildIfVoid() {
     var parseComma = true
-    var parser = Parse {
+    var parser = Parse(input: Substring.self) {
       "Hello"
       if parseComma {
         ","
@@ -62,7 +62,7 @@ final class ParserBuilderTests: XCTestCase {
 
   func testBuildIfOutput() throws {
     var parseInt = true
-    var parser = Parse {
+    var parser = Parse(input: Substring.self) {
       if parseInt {
         Int.parser()
         " "
@@ -118,7 +118,7 @@ final class ParserBuilderTests: XCTestCase {
 
     var input = "123 Blob"[...]
     XCTAssertThrowsError(
-      try Parse {
+      try Parse(input: Substring.self) {
         Int.parser()
         MyParser()
       }
@@ -137,7 +137,8 @@ final class ParserBuilderTests: XCTestCase {
     XCTAssertEqual(input, " Blob"[...])
 
     input = "123 Blob"[...]
-    func custom<P>(@ParserBuilder _ build: () -> P) -> P {
+
+    func custom<P>(@ParserBuilder<Substring> _ build: () -> P) -> P {
       build()
     }
     XCTAssertThrowsError(
@@ -158,5 +159,47 @@ final class ParserBuilderTests: XCTestCase {
       )
     }
     XCTAssertEqual(input, " Blob"[...])
+  }
+
+  func testNestedPrint() throws {
+    let p1 = ParsePrint(input: Substring.self) {
+      Digits()
+      ","
+      Digits()
+    }
+    let p2 = ParsePrint(input: Substring.self) {
+      Digits()
+      ","
+      Digits()
+    }
+    let p3 = ParsePrint {
+      p1
+      ","
+      p2
+    }
+    var input = ""[...]
+    try p3.print((1, 2, (3, 4)), into: &input)
+    XCTAssertEqual(input, "1,2,3,4")
+  }
+
+  func testNestedPrint_differentLayouts() throws {
+    let p1 = ParsePrint(input: Substring.self) {
+      Int32.parser()
+      ","
+      Int8.parser()
+    }
+    let p2 = ParsePrint(input: Substring.self) {
+      Int8.parser()
+      ","
+      Int32.parser()
+    }
+    let p3 = ParsePrint {
+      p1
+      ","
+      p2
+    }
+    var input = ""[...]
+    try p3.print((1, 2, (3, 4)), into: &input)
+    XCTAssertEqual(input, "1,2,3,4")
   }
 }

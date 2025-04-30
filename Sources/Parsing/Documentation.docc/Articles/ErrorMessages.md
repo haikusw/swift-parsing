@@ -1,4 +1,4 @@
-# Error messages
+# Error Messages
 
 Learn how the library reports parsing errors and how to integrate your own custom error messages
 into parsers.
@@ -12,8 +12,8 @@ For  example, the following `UInt8` parser fails to parse a string that would ca
 
 ```swift
 do {
-  var input = "1234 Hello"[...]
-  let number = try UInt8.parser().parse(&input))
+  var input = "1234 Hello"[...].utf8
+  let number = try UInt8.parser().parse(&input)
 } catch {
   print(error)
 
@@ -31,12 +31,10 @@ and numbers in parentheses are considered negative:
 
 ```swift
 let accountingNumber = OneOf {
-  Int.parser(isSigned: false)
+  Digits()
 
   Parse {
-    "("
-    Int.parser(isSigned: false)
-    ")"
+    "("; Digits(); ")"
   }
   .map { -$0 }
 }
@@ -52,7 +50,7 @@ second parser's error shows first since it was able to get the furthest:
 do {
   try accountingNumber.parse("(100]")
 } catch {
-  print(error))
+  print(error)
 
   // error: multiple failures occurred
   //
@@ -79,7 +77,7 @@ For example, we could construct a parser that consumes a single uncommented line
 for a  prefix:
 
 ```swift
-let uncommentedLine = Prefix { $0 != "\n" }
+let uncommentedLine = Prefix<Substring> { $0 != "\n" }
   .compactMap { $0.starts(with: "//") ? nil : $0 }
 
 try uncommentedLine.parse("// let x = 1")
@@ -129,7 +127,7 @@ struct User {
   var isAdmin: Bool
 }
 
-let user = Parse(User.init(id:name:isAdmin:)) {
+let user = Parse(input: Substring.self, User.init(id:name:isAdmin:)) {
   Int.parser()
   ","
   Prefix { $0 != "," }.map(String.init)
@@ -208,7 +206,7 @@ struct Digits: Parser {
 If we swap out the `Int.parser()` for a `Digits` parser in `user`:
 
 ```swift
-let user = Parse(User.init) {
+let user = Parse(input: Substring.self, User.init) {
   Digits()
   ","
   Prefix { $0 != "," }.map(String.init)
